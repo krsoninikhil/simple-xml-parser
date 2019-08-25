@@ -25,28 +25,38 @@ pub fn identifier(input: &str) -> Result<(&str, String), &str> {
     return Ok((&input[matched.len()..], matched))
 }
 
-pub fn pair<P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Fn(&str) ->
-    Result<(&str, (R1, R2)), &str>
-    where
-    P1: Fn(&str) -> Result<(&str, R1), &str>,
-    P2: Fn(&str) -> Result<(&str, R2), &str>,
+type ParseResult<'a, Output> = Result<(&'a str, Output), &'a str>;
+
+pub trait Parser<'a, Output> {
+    fn parse(&self, input: &'a str) -> ParseResult<'a, Output>;
+}
+
+impl<'a, F, Output> Parser<'a, Output> for F
+    where F: Fn(&'a str) -> ParseResult<Output>,
 {
-    move |input| match parser1(input) {
-        Ok((next_input, result1)) => match parser2(next_input) {
-            Ok((remaining_input, result2)) => Ok((remaining_input, (result1, result2))),
-            Err(err) => Err(err),
-        },
-        Err(err) => Err(err),
+    fn parse(&self, input: &'a str) -> ParseResult<'a, Output> {
+        self(input)
     }
 }
 
-fn map<P, F, A, B>(parser: P, map_fn: F) -> impl Fn(&str) -> Result<(&str, B), &str>
+pub fn pair<'a, P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<'a, (R1, R2)>
     where
-    P: Fn(&str) -> Result<(&str, A), &str>,
+    P1: Parser<'a, R1>,
+    P2: Parser<'a, R2>,
+{
+    move |input| parser1.parse(input).and_then(|(next_input, result1)| {
+        parser2.parse(next_input)
+            .map(|(remaining_input, result2)| (remaining_input, (result1, result2)))
+    })
+}
+
+fn map<'a, P, F, A, B>(parser: P, map_fn: F) -> impl Parser<'a, B>
+    where
+    P: Parser<'a, A>,
     F: Fn(A) -> B,
 {
-    move |input| parser(input).map(
-        |(next_input, result)| (next_input, map_fn(result));
+    move |input| parser.parse(input)
+        .map(|(next_input, result)| (next_input, map_fn(result)))
 }
 
 #[test]
