@@ -1,11 +1,11 @@
-pub fn match_literal(expected: &'static str) -> impl Fn(&str) -> Result<(&str, ()), &str> {
-    move |input| match input.get(0..expected.len()) {
+pub fn match_literal<'a>(expected: &'static str) -> impl Parser<'a, ()> {
+    move |input: &'a str| match input.get(0..expected.len()) {
         Some(next) if next == expected => Ok((&input[expected.len()..], ())),
         _ => Err(input),
     }
 }
 
-pub fn identifier(input: &str) -> Result<(&str, String), &str> {
+pub fn identifier(input: &str) -> ParseResult<String> {
     let mut matched = String::new();
     let mut chars = input.chars();
 
@@ -39,7 +39,7 @@ impl<'a, F, Output> Parser<'a, Output> for F
     }
 }
 
-pub fn pair<'a, P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<'a, (R1, R2)>
+fn pair<'a, P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<'a, (R1, R2)>
     where
     P1: Parser<'a, R1>,
     P2: Parser<'a, R2>,
@@ -59,21 +59,37 @@ fn map<'a, P, F, A, B>(parser: P, map_fn: F) -> impl Parser<'a, B>
         .map(|(next_input, result)| (next_input, map_fn(result)))
 }
 
+pub fn left<'a, P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<'a, R1>
+    where
+    P1: Parser<'a, R1>,
+    P2: Parser<'a, R2>,
+{
+    map(pair(parser1, parser2), |(left, _right)| left)
+}
+
+pub fn right<'a, P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<'a, R2>
+    where
+    P1: Parser<'a, R1>,
+    P2: Parser<'a, R2>,
+{
+    map(pair(parser1, parser2), |(_left, right)| right)
+}
+
 #[test]
 fn literal_parser() {
     let parse_div = match_literal("<div>");
 
     assert_eq!(
         Ok(("", ())),
-        parse_div("<div>")
+        parse_div.parse("<div>")
     );
     assert_eq!(
         Ok(("</div>", ())),
-        parse_div("<div></div>")
+        parse_div.parse("<div></div>")
     );
     assert_eq!(
         Err("<div id=\"test\"></div>"),
-        parse_div("<div id=\"test\"></div>")
+        parse_div.parse("<div id=\"test\"></div>")
     );
 }
 
@@ -99,8 +115,18 @@ fn pair_combinator() {
 
     assert_eq!(
         Ok(("/>", ((), "hr".to_string()))),
-        parse_open_tag("<hr/>")
+        parse_open_tag.parse("<hr/>")
     );
-    assert_eq!(Err("oops"), parse_open_tag("oops"));
-    assert_eq!(Err("!oops"), parse_open_tag("!oops"));
+    assert_eq!(Err("oops"), parse_open_tag.parse("oops"));
+    assert_eq!(Err("!oops"), parse_open_tag.parse("!oops"));
+}
+
+#[test]
+fn right_combinator() {
+    let parse_open_tag = right(match_literal("<"), identifier);
+
+    assert_eq!(
+        Ok(("/>", "hr".to_string())),
+        parse_open_tag.parse("<hr/>")
+    );
 }
