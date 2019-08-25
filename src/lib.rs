@@ -40,6 +40,17 @@ pub fn pair<P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Fn(&str) ->
     }
 }
 
+fn map<P, F, A, B>(parser: P, map_fn: F) -> impl Fn(&str) -> Result<(&str, B), &str>
+    where
+    P: Fn(&str) -> Result<(&str, A), &str>,
+    F: Fn(A) -> B,
+{
+    move |input| match parser(input) {
+        Ok((next, result)) => Ok((next, map_fn(result))),
+        Err(err) => Err(err),
+    }
+}
+
 #[test]
 fn literal_parser() {
     let parse_div = match_literal("<div>");
