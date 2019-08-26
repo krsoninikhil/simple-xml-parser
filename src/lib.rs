@@ -75,6 +75,79 @@ pub fn right<'a, P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<'a, R2
     map(pair(parser1, parser2), |(_left, right)| right)
 }
 
+pub fn one_or_more<'a, P, A>(parser: P) -> impl Parser<'a, Vec<A>>
+    where
+    P: Parser<'a, A>,
+{
+    move |mut input| {
+        let mut result = Vec::new();
+
+        // first match
+        if let Ok((next, first_value)) = parser.parse(input) {
+            input = next;
+            result.push(first_value);
+        } else {
+            return Err(input);
+        }
+        // repeated match
+        while let Ok((next_input, next_value)) = parser.parse(input) {
+            input = next_input;
+            result.push(next_value);
+        }
+
+        Ok((input, result))
+    }
+}
+
+pub fn zero_or_more<'a, P, A>(parser: P) -> impl Parser<'a, Vec<A>>
+    where
+    P: Parser<'a, A>,
+{
+    move |mut input| {
+        let mut result = Vec::new();
+        while let Ok((next_input, next_value)) = parser.parse(input) {
+            input = next_input;
+            result.push(next_value);
+        }
+
+        Ok((input, result))
+    }
+}
+
+pub fn any_char(input: &str) -> ParseResult<char> {
+    match input.chars().next() {
+        Some(first_char) => Ok((&input[first_char.len_utf8()..], first_char)),
+        _ => Err(input),
+    }
+}
+
+pub fn pred<'a, P, F, R>(parser: P, predicate: F) -> impl Parser<'a, R>
+    where
+    P: Parser<'a, R>,
+    F: Fn(&R) -> bool,
+{
+    move |input| {
+        if let Ok((next, value)) = parser.parse(input) {
+            if predicate(&value) {
+                return Ok((next, value));
+            }
+        }
+        Err(input)
+    }
+}
+
+pub fn whitespace_char<'a>() -> impl Parser<'a, char> {
+    pred(any_char, |c| c.is_whitespace())
+}
+
+fn space1<'a>() impl Parser<'a, Vec<char>> {
+    one_or_more(whitespace_char())
+}
+
+fn space0<'a>() impl Parser<'a, Vec<char>> {
+    zero_or_more(whitespace_char())
+}
+
 #[test]
 fn literal_parser() {
     let parse_div = match_literal("<div>");
@@ -129,4 +202,27 @@ fn right_combinator() {
         Ok(("/>", "hr".to_string())),
         parse_open_tag.parse("<hr/>")
     );
+}
+
+#[test]
+fn one_or_more_combinator() {
+    let parser = one_or_more(match_literal("ha"));
+    assert_eq!(Ok(("", vec![(), (), ()])), parser.parse("hahaha"));
+    assert_eq!(Err("ahah"), parser.parse("ahah"));
+    assert_eq!(Err(""), parser.parse(""));
+}
+
+#[test]
+fn zero_or_more_combinator() {
+    let parser = zero_or_more(match_literal("ha"));
+    assert_eq!(Ok(("", vec![(), (), ()])), parser.parse("hahaha"));
+    assert_eq!(Ok(("ahah", vec![])), parser.parse("ahah"));
+    assert_eq!(Ok(("", vec![])), parser.parse(""));
+}
+
+#[test]
+fn predicate_combinator() {
+    let parser = pred(any_char, |c| *c == 'o');
+    assert_eq!(Ok(("mg", 'o')), parser.parse("omg"));
+    assert_eq!(Err("lol"), parser.parse("lol"));
 }
