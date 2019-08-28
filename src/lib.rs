@@ -1,3 +1,5 @@
+#![type_length_limit="1137931"]
+
 pub fn match_literal<'a>(expected: &'static str) -> impl Parser<'a, ()> {
     move |input: &'a str| match input.get(0..expected.len()) {
         Some(next) if next == expected => Ok((&input[expected.len()..], ())),
@@ -140,12 +142,33 @@ pub fn whitespace_char<'a>() -> impl Parser<'a, char> {
     pred(any_char, |c| c.is_whitespace())
 }
 
-fn space1<'a>() impl Parser<'a, Vec<char>> {
+fn space1<'a>() -> impl Parser<'a, Vec<char>> {
     one_or_more(whitespace_char())
 }
 
-fn space0<'a>() impl Parser<'a, Vec<char>> {
+fn space0<'a>() -> impl Parser<'a, Vec<char>> {
     zero_or_more(whitespace_char())
+}
+
+fn quoted_string<'a>() -> impl Parser<'a, String> {
+    map(
+        right(
+            match_literal("\""),
+            left(
+                zero_or_more(pred(any_char, |c| *c != '"')),
+                match_literal("\"")
+            ),
+        ),
+        |chars| chars.into_iter().collect()
+    )
+}
+
+fn attribute_pair<'a>() -> impl Parser<'a, (String, String)> {
+    pair(identifier, right(match_literal("="), quoted_string()))
+}
+
+fn attributes<'a>() -> impl Parser<'a, Vec<(String, String)>> {
+    zero_or_more(right(space1(), attribute_pair()))
 }
 
 #[test]
@@ -225,4 +248,23 @@ fn predicate_combinator() {
     let parser = pred(any_char, |c| *c == 'o');
     assert_eq!(Ok(("mg", 'o')), parser.parse("omg"));
     assert_eq!(Err("lol"), parser.parse("lol"));
+}
+
+#[test]
+fn quoted_string_parser() {
+    assert_eq!(
+        Ok(("", "Hello World!".to_string())),
+        quoted_string().parse("\"Hello World!\"")
+    );
+}
+
+#[test]
+fn attribute_parser() {
+    assert_eq!(
+        Ok(("", vec![
+                ("one".to_string(), "1".to_string()),
+                ("two".to_string(), "2".to_string())
+        ])),
+        attributes().parse(" one=\"1\" two=\"2\"")
+    );
 }
