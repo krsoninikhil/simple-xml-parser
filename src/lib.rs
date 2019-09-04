@@ -410,11 +410,20 @@ fn mismatched_closing_tag() {
 
 #[test]
 fn xml_parser() {
-    let doc = r#"<top label="Top"></top>"#;
+    let doc = r#"
+              <parent-element>
+                     <single-element attribute="value"/>
+              </parent-element>"#;
     let parsed_doc = Element{
-        name: "top".to_string(),
-        attributes: vec![("label".to_string(), "Top".to_string())],
-        children: vec![],
+        name: "parent-element".to_string(),
+        attributes: vec![],
+        children: vec![
+            Element{
+                name: "single-element".to_string(),
+                attributes: vec![("attribute".to_string(), "value".to_string())],
+                children: vec![],
+            }
+        ],
     };
     assert_eq!(Ok(("", parsed_doc)), element().parse(doc));
 }
